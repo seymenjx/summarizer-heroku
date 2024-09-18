@@ -44,10 +44,17 @@ app = Flask(__name__)
 logger = setup_logging()
 
 # Initialize Redis connection
-# Potential risk: Ensure REDIS_URL is set in environment variables
+# Use the REDIS_URL provided by Heroku if available
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-redis_conn = Redis.from_url(redis_url)
-q = Queue(connection=redis_conn)
+try:
+    redis_conn = Redis.from_url(redis_url)
+    q = Queue(connection=redis_conn)
+except Exception as e:
+    logger.error(f"Failed to connect to Redis: {str(e)}")
+    # Fallback to in-memory queue for development
+    from fakeredis import FakeStrictRedis
+    redis_conn = FakeStrictRedis()
+    q = Queue(connection=redis_conn)
 
 @app.route('/')
 def home():
@@ -87,7 +94,7 @@ def summarize():
     
     # Enqueue job
     try:
-        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers)
+        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers, timeout=3600)  # Set a 1-hour timeout
         logger.info(f"Successfully enqueued job with ID: {job.id}")
         return jsonify({'job_id': job.id}), 202
     except Exception as e:
