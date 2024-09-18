@@ -1,17 +1,17 @@
 import os
 import asyncio
-import boto3
+import aioboto3
+import aiohttp
 from together import Together
 import logging
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-import aiohttp
 
 logger = logging.getLogger(__name__)
 
 # Initialize Together AI client
 load_dotenv()
-together = Together()
+together = Together(os.getenv('TOGETHER_API_KEY'))
 
 async def summarize_text(text, session):
     prompt = f"Summarize the following text:\n\n{text}\n\nSummary:"
