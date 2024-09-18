@@ -3,7 +3,7 @@ from flask import Flask, jsonify, request
 from rq import Queue
 from redis import Redis
 from dotenv import load_dotenv
-ort logging
+import logging
 from logging.handlers import RotatingFileHandler
 import sys
 from summarizer import summarize_files_from_s3
