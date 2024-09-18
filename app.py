@@ -3,8 +3,7 @@ from flask import Flask, jsonify, request
 from rq import Queue
 from redis import Redis
 from dotenv import load_dotenv
-from rq.job import Job
-import logging
+ort logging
 from logging.handlers import RotatingFileHandler
 import sys
 from summarizer import summarize_files_from_s3
@@ -69,7 +68,8 @@ def summarize():
         return jsonify({'error': f'Error enqueueing job: {str(e)}'}), 500
 
 @app.route('/cancel/<job_id>', methods=['POST'])
-def cancel_job(job_id):
+deffrom rq.job import Job
+imp cancel_job(job_id):
     logger.info(f"Attempting to cancel job {job_id}")
     try:
         job = Job.fetch(job_id, connection=redis_conn)
