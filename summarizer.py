@@ -6,11 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import logging
 from botocore.exceptions import ClientError
-
+from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # Initialize Together AI client
-together = Together(os.getenv('TOGETHER_API_KEY'))
+load_dotenv()
+together = Together()
 
 async def summarize_text(text):
     # Prepare the prompt for text summarization
