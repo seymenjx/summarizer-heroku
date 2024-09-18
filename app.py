@@ -94,7 +94,7 @@ def summarize():
     
     # Enqueue job
     try:
-        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers, timeout=3600)  # Set a 1-hour timeout
+        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers)
         logger.info(f"Successfully enqueued job with ID: {job.id}")
         return jsonify({'job_id': job.id}), 202
     except Exception as e:
