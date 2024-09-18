@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tenacity import retry, stop_after_attempt, wait_exponential
 import json
 from datetime import datetime
+import logging
 
 start_time = time.time()
 load_dotenv()
@@ -173,17 +174,9 @@ def process_single_file(bucket_name, file_key):
         return file_key, input_tokens, None, None
 
 def summarize_files_from_s3(bucket_name, prefix='', max_files=100, max_workers=10):
-    """
-    List all files in an S3 bucket, fetch their content, summarize them using Together AI, and print the summaries.
-    Additionally, calculate input and output tokens for cost estimation.
-    
-    Parameters:
-        bucket_name (str): The name of the S3 bucket.
-        prefix (str): The prefix to filter files in the bucket. Default is empty.
-        max_files (int): The maximum number of files to process.
-        max_workers (int): The maximum number of worker threads to use for parallel processing.
-    """
+    logger.info(f"Starting summarization for bucket: {bucket_name}, prefix: {prefix}")
     files = list_files_in_s3(bucket_name, prefix)
+    logger.info(f"Found {len(files)} files")
     
     if not files:
         print("No files found in the S3 bucket.")
@@ -251,3 +244,10 @@ def get_summary_from_s3(bucket_name, summary_key):
         # If any error occurs during the process, print the error and return None values
         print(f"Error retrieving summary {summary_key}: {str(e)}")
         return None, None
+
+def setup_logger(name):
+    logger = logging.getLogger(name)
+    # ... rest of the logger setup ...
+    return logger
+
+logger = setup_logger(__name__)

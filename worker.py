@@ -1,14 +1,20 @@
 import os
-from rq import Worker, Queue, Connection
 from redis import Redis
-from summarizer import summarize_files_from_s3
+from rq import Worker, Queue, Connection
+from dotenv import load_dotenv
+from logger import setup_logger
+
+load_dotenv()
+logger = setup_logger(__name__)
 
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-conn = Redis.from_url(redis_url)
+redis_conn = Redis.from_url(redis_url)
 
 if __name__ == '__main__':
-    with Connection(conn):
+    logger.info("Starting worker")
+    with Connection(redis_conn):
         worker = Worker(Queue('default'))
+        logger.info("Worker started, waiting for jobs...")
         worker.work()
 
 
