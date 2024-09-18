@@ -3,6 +3,7 @@ from flask import Flask, jsonify, request
 from rq import Queue
 from redis import Redis
 from dotenv import load_dotenv
+from rq.job import Job
 
 load_dotenv()
 
@@ -33,6 +34,20 @@ def summarize():
         'max_files': max_files,
         'max_workers': max_workers
     }), 202
+
+@app.route('/cancel/<job_id>', methods=['POST'])
+def cancel_job(job_id):
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+        if job.is_finished:
+            return jsonify({'message': f'Job {job_id} has already finished'}), 400
+        elif job.is_failed:
+            return jsonify({'message': f'Job {job_id} has already failed'}), 400
+        else:
+            job.cancel()
+            return jsonify({'message': f'Job {job_id} has been cancelled'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)
