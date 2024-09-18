@@ -2,113 +2,83 @@ import os
 import asyncio
 import boto3
 from together import Together
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 import logging
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
+import aiohttp
+
 logger = logging.getLogger(__name__)
 
 # Initialize Together AI client
 load_dotenv()
-together = Together(os.getenv('TOGETHER_API_KEY'))
+together = Together()
 
-async def summarize_text(text):
-    # Prepare the prompt for text summarization
+async def summarize_text(text, session):
     prompt = f"Summarize the following text:\n\n{text}\n\nSummary:"
     try:
-        # Check available methods
-        print(dir(together))
-        
-        # Try different method names
-        if hasattr(together, 'complete'):
-            response = await together.complete(prompt=prompt, model="togethercomputer/llama-2-70b-chat", max_tokens=200)
-        elif hasattr(together, 'generate'):
-            response = await together.generate(prompt=prompt, model="togethercomputer/llama-2-70b-chat", max_tokens=200)
-        else:
-            raise AttributeError("No suitable method found for text generation")
-        
-        return response['output']['choices'][0]['text'].strip()
+        async with session.post(
+            "https://api.together.xyz/inference",
+            json={
+                "model": "togethercomputer/llama-2-70b-chat",
+                "prompt": prompt,
+                "max_tokens": 200,
+            },
+            headers={"Authorization": f"Bearer {os.getenv('TOGETHER_API_KEY')}"}
+        ) as response:
+            if response.status == 200:
+                result = await response.json()
+                return result['output']['choices'][0]['text'].strip()
+            else:
+                logger.error(f"API request failed with status {response.status}")
+                return None
     except Exception as e:
         logger.error(f"Error in summarize_text: {str(e)}")
-        logger.error(f"Together API Key: {os.getenv('TOGETHER_API_KEY')}")
-        logger.error(f"Available methods: {dir(together)}")
         return None
 
-async def process_file(s3_client, bucket, key):
+async def process_file(s3_client, bucket, key, session):
     try:
-        # Retrieve the file content from S3
-        response = s3_client.get_object(Bucket=bucket, Key=key)
-        content = response['Body'].read().decode('utf-8')
-        # Generate a summary for the file content
-        summary = await summarize_text(content)
+        response = await s3_client.get_object(Bucket=bucket, Key=key)
+        content = await response['Body'].read()
+        content = content.decode('utf-8')
+        summary = await summarize_text(content, session)
         return key, summary
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'NoSuchKey':
-            logger.error(f"File not found: {key}")
-        else:
-            logger.error(f"Error processing file {key}: {str(e)}")
-        return key, None
-    except UnicodeDecodeError:
-        logger.error(f"Unable to decode file {key}. It might not be a text file.")
-        return key, None
     except Exception as e:
-        logger.error(f"Unexpected error processing file {key}: {str(e)}")
+        logger.error(f"Error processing file {key}: {str(e)}")
         return key, None
 
-async def process_batch(s3_client, bucket, keys):
-    # Create tasks for processing multiple files concurrently
-    tasks = [process_file(s3_client, bucket, key) for key in keys]
-    return await asyncio.gather(*tasks)
-
-def summarize_files_from_s3(bucket_name, prefix='', max_files=100, max_workers=10):
+async def summarize_files_from_s3(bucket_name, prefix='', max_files=100, max_workers=10):
     try:
-        s3_client = boto3.client('s3')
-        paginator = s3_client.get_paginator('list_objects_v2')
+        session = aioboto3.Session()
+        async with session.client('s3') as s3_client:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            summaries = {}
+            files_processed = 0
+            
+            async with aiohttp.ClientSession() as api_session:
+                async for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
+                    if 'Contents' not in page:
+                        continue
+                    
+                    keys = [obj['Key'] for obj in page['Contents'] if obj['Key'].lower().endswith(('.txt', '.log', '.md'))]
+                    
+                    tasks = [process_file(s3_client, bucket_name, key, api_session) for key in keys[:max_files - files_processed]]
+                    results = await asyncio.gather(*tasks)
+                    
+                    for key, summary in results:
+                        if summary:
+                            summaries[key] = summary
+                            files_processed += 1
+                            if files_processed >= max_files:
+                                return summaries
+            
+            return summaries
     except Exception as e:
-        logger.error(f"Failed to initialize S3 client: {str(e)}")
+        logger.error(f"Error in summarize_files_from_s3: {str(e)}")
         return {}
 
-    summaries = {}
-    files_processed = 0
-    
-    async def process_pages():
-        nonlocal files_processed
-        loop = asyncio.get_event_loop()
-        
-        try:
-            for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
-                if 'Contents' not in page:
-                    continue
-                
-                # Filter for text files
-                keys = [obj['Key'] for obj in page['Contents'] if obj['Key'].lower().endswith(('.txt', '.log', '.md'))]
-                
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    batch_size = min(len(keys), 10)  # Process up to 10 files per batch
-                    for i in range(0, len(keys), batch_size):
-                        batch = keys[i:i+batch_size]
-                        # Process a batch of files concurrently
-                        results = await loop.run_in_executor(executor, partial(asyncio.run, process_batch(s3_client, bucket_name, batch)))
-                        
-                        for key, summary in results:
-                            if summary:
-                                summaries[key] = summary
-                                files_processed += 1
-                                if files_processed >= max_files:
-                                    return
-        except ClientError as e:
-            logger.error(f"S3 client error: {str(e)}")
-        except Exception as e:
-            logger.error(f"Unexpected error during processing: {str(e)}")
-    
-    # Run the asynchronous processing
-    try:
-        asyncio.run(process_pages())
-    except Exception as e:
-        logger.error(f"Error in asyncio execution: {str(e)}")
-    
-    return summaries
+# This function will be called by RQ
+def run_summarize_files_from_s3(bucket_name, prefix='', max_files=100, max_workers=10):
+    return asyncio.run(summarize_files_from_s3(bucket_name, prefix, max_files, max_workers))
 
 if __name__ == '__main__':
     # For testing purposes

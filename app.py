@@ -7,7 +7,7 @@ from rq.job import Job
 from dotenv import load_dotenv
 from logging.handlers import RotatingFileHandler
 import sys
-from summarizer import summarize_files_from_s3
+from summarizer import run_summarize_files_from_s3
 
 # Load environment variables from .env file
 load_dotenv()
@@ -94,7 +94,7 @@ def summarize():
     
     # Enqueue job
     try:
-        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers)
+        job = q.enqueue(run_summarize_files_from_s3, bucket_name, prefix, max_files, max_workers, job_timeout=3600)
         logger.info(f"Successfully enqueued job with ID: {job.id}")
         return jsonify({'job_id': job.id}), 202
     except Exception as e:
@@ -125,5 +125,5 @@ def cancel_job(job_id):
 
 if __name__ == '__main__':
     # Potential risk: Debug mode should be disabled in production
-    app.run(debug=False, host='0.0.0.0')
+    app.run(debug=False, host='0.0.0.0', port=5001)
 
