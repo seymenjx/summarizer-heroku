@@ -11,17 +11,28 @@ logger = logging.getLogger(__name__)
 
 # Initialize Together AI client
 load_dotenv()
-together = Together()
+together = Together(os.getenv('TOGETHER_API_KEY'))
 
 async def summarize_text(text):
     # Prepare the prompt for text summarization
     prompt = f"Summarize the following text:\n\n{text}\n\nSummary:"
     try:
-        # Use Together AI to generate a summary
-        response = await together.complete(prompt=prompt, model="togethercomputer/llama-2-70b-chat", max_tokens=200)
+        # Check available methods
+        print(dir(together))
+        
+        # Try different method names
+        if hasattr(together, 'complete'):
+            response = await together.complete(prompt=prompt, model="togethercomputer/llama-2-70b-chat", max_tokens=200)
+        elif hasattr(together, 'generate'):
+            response = await together.generate(prompt=prompt, model="togethercomputer/llama-2-70b-chat", max_tokens=200)
+        else:
+            raise AttributeError("No suitable method found for text generation")
+        
         return response['output']['choices'][0]['text'].strip()
     except Exception as e:
         logger.error(f"Error in summarize_text: {str(e)}")
+        logger.error(f"Together API Key: {os.getenv('TOGETHER_API_KEY')}")
+        logger.error(f"Available methods: {dir(together)}")
         return None
 
 async def process_file(s3_client, bucket, key):
