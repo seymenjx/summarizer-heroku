@@ -7,6 +7,7 @@ from rq.job import Job
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
+from summarizer import summarize_files_from_s3
 
 load_dotenv()
 
@@ -58,14 +59,14 @@ def summarize():
 
     logger.info(f"Received request: bucket={bucket_name}, prefix={prefix}, max_files={max_files}, max_workers={max_workers}")
     
-    # Here you would typically enqueue a job, but for now, let's just return a message
-    return jsonify({
-        'message': 'Summarization request received',
-        'bucket': bucket_name,
-        'prefix': prefix,
-        'max_files': max_files,
-        'max_workers': max_workers
-    }), 202
+    # Enqueue job
+    try:
+        job = q.enqueue(summarize_files_from_s3, bucket_name, prefix, max_files, max_workers)
+        logger.info(f"Successfully enqueued job with ID: {job.id}")
+        return jsonify({'job_id': job.id}), 202
+    except Exception as e:
+        logger.error(f"Error enqueueing job: {str(e)}")
+        return jsonify({'error': f'Error enqueueing job: {str(e)}'}), 500
 
 @app.route('/cancel/<job_id>', methods=['POST'])
 def cancel_job(job_id):
