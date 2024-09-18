@@ -7,6 +7,8 @@ from redis import Redis
 from dotenv import load_dotenv
 from summarizer import summarize_files_from_s3
 from logger import setup_logger
+from rq.job import Job
+from rq_dashboard import RQDashboard
 
 load_dotenv()
 
@@ -65,6 +67,17 @@ def summarize():
     except Exception as e:
         logger.error(f"Error enqueueing job: {str(e)}")
         return jsonify({'error': f'Error enqueueing job: {str(e)}'}), 500
+
+@app.route('/cancel/<job_id>', methods=['POST'])
+def cancel_job(job_id):
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+        job.cancel()
+        return jsonify({'message': f'Job {job_id} has been cancelled'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+RQDashboard(app)
 
 if __name__ == '__main__':
     logger.info("Starting Flask application")
