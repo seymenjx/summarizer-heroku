@@ -31,12 +31,14 @@ multidict==6.1.0
 numpy==2.1.1
 packaging==24.1
 pillow==10.4.0
+psutil==6.0.0
 pyarrow==17.0.0
 pydantic==2.9.1
 pydantic_core==2.23.3
 Pygments==2.18.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
+ratelimit==2.2.1
 redis==5.0.8
 regex==2024.9.11
 requests==2.32.3
