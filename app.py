@@ -7,6 +7,7 @@ import uuid
 from redis import Redis
 from rq import Queue, Worker
 from summarizer.core import run_summarize_files_from_s3  # Updated import
+import asyncio
 
 app = Flask(__name__)
 
@@ -42,17 +43,28 @@ def summarize():
 
 @app.route('/get_summaries', methods=['GET'])
 def get_summaries():
-    summaries = redis_client.get(results_key)
-    if summaries:
-        try:
-            summaries_dict = json.loads(summaries)
-            return jsonify(summaries_dict), 200
-        except json.JSONDecodeError:
-            logger.error("Failed to decode summaries JSON")
-            return jsonify({"error": "Invalid summary data"}), 500
-    else:
-        return jsonify({"error": "No summaries available"}), 404
+    try:
+        data = request.args
+        if not data:
+            return jsonify({"error": "Invalid request parameters"}), 400
+
+        job_id = data.get('job_id')
+        if not job_id:
+            return jsonify({"error": "Missing 'job_id' in request"}), 400
+
+        # Fetch summarized data from Redis using the job ID
+        redis_key = f"{results_key}:{job_id}"
+        logger.info(f"Fetching summaries from Redis with key: {redis_key}")
+        summaries = redis_client.get(redis_key)
+        if not summaries:
+            logger.warning(f"No summaries found for job ID: {job_id}")
+            return jsonify({"error": "No summaries found for the given job ID"}), 404
+
+        summaries = json.loads(summaries)
+        return jsonify(summaries)
+    except Exception as e:
+        logger.error(f"Error in get_summaries: {str(e)}")
+        return jsonify({"error": "Failed to fetch summaries"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
-
+    app.run(debug=True, host='0.0.0.0', port=5001)

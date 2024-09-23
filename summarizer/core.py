@@ -22,14 +22,11 @@ ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
 async def summarize_text(text):
+    logger.info(f"Starting summarization for text of length: {len(text)}")
+    
     if len(text) < 50:  # Add a check for very short texts
-        return {
-            "Dava Konusu": "Metin çok kısa",
-            "Hukuki Dayanak": "Metin çok kısa",
-            "Mahkeme Kararı": "Metin çok kısa",
-            "Kararın Gerekçesi": "Metin çok kısa",
-            "Tam Ozet Metni": "Metin özet için çok kısa"
-        }
+        logger.warning(f"Text is too short (length: {len(text)}). Skipping summarization.")
+        return "Metin özet için çok kısa"
 
     try:
         prompt = f"""Aşağıdaki metin bir Yargıtay kararıdır. Bu kararın özetini çıkarın ve kesinlikle aşağıdaki formatta sunun:
@@ -42,14 +39,16 @@ async def summarize_text(text):
                 Lütfen her bölümü ayrı ayrı doldurun ve bölüm başlıklarını aynen kullanın. Önemli hukuki terimleri ve kanun numaralarını mutlaka belirtin. Özet kısa ve öz olmalı, ancak kritik bilgileri içermelidir. Eğer herhangi bir bölüm için bilgi bulunamazsa, o bölümü 'Bilgi bulunamadı' olarak işaretleyin. Lütfen cevabınızı sadece bu dört bölümle sınırlı tutun ve ekstra bilgi eklemeyin. Eğer metinde yeterli bilgi yoksa, 'Bilgi bulunamadı' yazmak yerine mevcut bilgileri kullanarak en iyi tahmini yapın.
 
                 Karar metni:
-                {text}
+                {text[:1000]}  # Limit the text to 1000 characters for logging
 
                 Özet:"""
+        
+        logger.info(f"Generated prompt: {prompt[:500]}...")  # Log the first 500 characters of the prompt
         
         payload = {
             "model": os.getenv('MODEL', 'togethercomputer/llama-3-70b-chat'),
             "prompt": prompt,
-            "max_tokens": 1500,  # Increased from 1000 to 1500
+            "max_tokens": 1500,
             "temperature": 0.7,
             "top_p": 0.95,
             "top_k": 40,
@@ -63,11 +62,16 @@ async def summarize_text(text):
             "Content-Type": "application/json"
         }
         
+        logger.info("Sending request to AI API")
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
             async with session.post(API_URL, json=payload, headers=headers) as response:
+                logger.info(f"Received response with status: {response.status}")
                 response_data = await response.json()
+                logger.info(f"Raw API response: {response_data}")  # Log the entire response
+                
                 if 'output' in response_data and 'choices' in response_data['output']:
                     summary = response_data['output']['choices'][0]['text']
+                    logger.info(f"Generated summary: {summary[:500]}...")  # Log the first 500 characters of the summary
                     return summary.strip()
                 else:
                     logger.error(f"Unexpected response format: {response_data}")
@@ -75,13 +79,8 @@ async def summarize_text(text):
         
     except Exception as e:
         logger.error(f"Error in summarize_text: {str(e)}")
-        return {
-            "Dava Konusu": "Hata oluştu",
-            "Hukuki Dayanak": "Hata oluştu",
-            "Mahkeme Kararı": "Hata oluştu",
-            "Kararın Gerekçesi": "Hata oluştu",
-            "Tam Ozet Metni": f"Özet oluşturulurken bir hata oluştu: {str(e)}"
-        }
+        logger.error(traceback.format_exc())  # Log the full traceback
+        return f"Özet oluşturulurken bir hata oluştu: {str(e)}"
 
 def clean_summary(summary):
     if isinstance(summary, dict):
@@ -110,49 +109,56 @@ def clean_summary(summary):
 async def parse_summary(summary):
     logger.info(f"Parsing summary: {summary}")
     
-    cleaned_summary = clean_summary(summary)
+    sections = ["Dava Konusu:", "Hukuki Dayanak:", "Mahkeme Kararı:", "Kararın Gerekçesi:"]
+    parsed = {section.strip(':'): "Bilgi bulunamadı." for section in sections}
     
-    if isinstance(cleaned_summary, dict):
-        sections = ["Dava Konusu", "Hukuki Dayanak", "Mahkeme Kararı", "Kararın Gerekçesi"]
-        parsed = {section: cleaned_summary.get(section, "Bilgi bulunamadı.").strip() for section in sections}
-    elif isinstance(cleaned_summary, str):
-        sections = ["Dava Konusu:", "Hukuki Dayanak:", "Mahkeme Kararı:", "Kararın Gerekçesi:"]
-        parsed = {section.strip(':'): "" for section in sections}
+    if isinstance(summary, dict):
+        # Handle the case where summary is already a dictionary
+        for key in parsed.keys():
+            if key in summary:
+                parsed[key] = summary[key]
+        parsed['Output'] = summary.get('Output', '')
+    elif isinstance(summary, str):
+        # Parse the string summary
         current_section = None
-        for line in cleaned_summary.split('\n'):
+        lines = summary.split('\n')
+        for line in lines:
             line = line.strip()
             if any(section in line for section in sections):
-                current_section = line.split(':')[0].strip()
-            elif current_section:
-                parsed[current_section] += line + " "
+                current_section = line.split(':')[0].strip() + ':'
+                parsed[current_section.strip(':')] = line.split(':', 1)[1].strip()
+            elif current_section and line:
+                parsed[current_section.strip(':')] += " " + line
+        parsed['Output'] = summary
     else:
-        logger.error(f"Unexpected summary type: {type(cleaned_summary)}")
-        return {
-            "Dava Konusu": "Hata oluştu",
-            "Hukuki Dayanak": "Hata oluştu",
-            "Mahkeme Kararı": "Hata oluştu",
-            "Kararın Gerekçesi": "Hata oluştu",
-            "Tam Ozet Metni": "Özet uygun formatta değil"
-        }
+        logger.error(f"Unexpected summary type: {type(summary)}")
+        parsed['Output'] = str(summary)
 
-    for section in parsed:
-        if not parsed[section]:
-            parsed[section] = "Bilgi bulunamadı."
-        else:
-            parsed[section] = parsed[section].strip()
+    # Clean up any remaining "Bilgi bulunamadı." entries if we have actual content
+    for key, value in parsed.items():
+        if value.strip() == "Bilgi bulunamadı." and parsed['Output']:
+            parsed[key] = "Özet metninde bu bölüm için spesifik bilgi bulunamadı."
+
+    # Ensure that the Tam Ozet Metni is properly filled
+    parsed["Tam Ozet Metni"] = "\n".join([f"{section}: {content}" for section, content in parsed.items() if section != "Tam Ozet Metni" and section != "Output"])
     
-    parsed["Tam Ozet Metni"] = "\n".join([f"{section}: {content}" for section, content in parsed.items() if section != "Tam Ozet Metni"])
-
+    # If the Output is empty, fill it with the Tam Ozet Metni
+    if not parsed['Output']:
+        parsed['Output'] = parsed["Tam Ozet Metni"]
+    
     return parsed
 
-async def run_summarize_files_from_s3(bucket_name, prefix='', max_files=100):
-    logger.info(f"Starting summarization for bucket: {bucket_name}, prefix: {prefix}, max_files: {max_files}")
+async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
     try:
+        file_count = 0
         async for key in get_s3_files(bucket_name, prefix, max_files):
+            if file_count >= max_files:
+                break
             content = await get_file_content(bucket_name, key)
             summary = await summarize_text(content)
             parsed_summary = await parse_summary(summary)
             yield {key: parsed_summary}
+            file_count += 1
         logger.info("Summarization completed successfully")
     except Exception as e:
         logger.error(f"Error in run_summarize_files_from_s3: {str(e)}")
