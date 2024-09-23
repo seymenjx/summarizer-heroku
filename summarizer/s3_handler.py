@@ -1,43 +1,38 @@
-import aioboto3
+import aiobotocore.session
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-async def get_s3_files(bucket_name, prefix='', max_files=100):
-    session = aioboto3.Session()
-    async with session.client('s3') as s3_client:
-        paginator = s3_client.get_paginator('list_objects_v2')
-        files_yielded = 0
-
-        logger.info(f"Listing files in bucket: {bucket_name}, prefix: {prefix}")
-
-        async for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
-            for obj in page.get('Contents', []):
-                if files_yielded >= max_files:
+async def get_s3_files(bucket, prefix, max_files):
+    session = aiobotocore.session.get_session()  # Use get_session to create a session
+    async with session.create_client('s3', region_name='eu-north-1') as client:  # Set the correct region here
+        paginator = client.get_paginator('list_objects_v2')
+        async for result in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for content in result.get('Contents', []):
+                if content['Key'] == '9/b+V+I9J23s3P2ZRZ9TX6XNE3RP301xQ7VtHBvU':
+                    continue  # Skip this file
+                yield content['Key']
+                if max_files and max_files <= 0:
                     return
-                
-                key = obj['Key']
-                if key.lower().endswith(('.txt', '.log', '.md')):
-                    yield key
-                    files_yielded += 1
-                else:
-                    logger.debug(f"Skipping file with unsupported extension: {key}")
+                max_files -= 1
 
-        logger.info(f"Total files yielded: {files_yielded}")
-        
-        if files_yielded == 0:
-            logger.warning(f"No files were yielded from bucket: {bucket_name}, prefix: {prefix}")
+async def get_file_content(bucket, key):
+    session = aiobotocore.session.get_session()  # Use get_session to create a session
+    async with session.create_client('s3', region_name='eu-north-1') as client:  # Set the correct region here
+        response = await client.get_object(Bucket=bucket, Key=key)
+        async with response['Body'] as stream:
+            return await stream.read()
 
-async def get_file_content(bucket_name, key):
-    session = aioboto3.Session()
-    async with session.client('s3') as s3_client:
-        try:
-            response = await s3_client.get_object(Bucket=bucket_name, Key=key)
-            content = await response['Body'].read()
-            decoded_content = content.decode('utf-8')
-            logger.info(f"Successfully retrieved content for {key} (length: {len(decoded_content)})")
-            return decoded_content
-        except Exception as e:
-            logger.error(f"Error retrieving file content for {key}: {str(e)}", exc_info=True)
-            return f"Dosya içeriği alınamadı: {str(e)}"
+# Example usage
+async def main():
+    bucket = 'emsaller'
+    prefix = ''
+    max_files = 5
+
+    async for key in get_s3_files(bucket, prefix, max_files):
+        content = await get_file_content(bucket, key)
+        logger.info(f"Successfully retrieved content for {key} (length: {len(content)})")
+
+if __name__ == "__main__":
+    asyncio.run(main())

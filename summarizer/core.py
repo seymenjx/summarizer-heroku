@@ -5,7 +5,7 @@ import json
 import ssl
 import certifi
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-from .s3_handler import get_s3_files, get_file_content
+from .s3_handler import get_s3_files, get_file_content, check_summary_exists, upload_summary_to_s3
 import traceback
 from dotenv import load_dotenv
 import asyncio
@@ -22,16 +22,13 @@ ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(5))
 async def summarize_text(text):
-    logger.info(f"Starting summarization for text of length: {len(text)}")
-    
     if len(text) < 50:  # Add a check for very short texts
-        logger.warning(f"Text is too short (length: {len(text)}). Skipping summarization.")
         return "Metin özet için çok kısa"
 
     try:
         prompt = f"""Aşağıdaki metin bir Yargıtay kararıdır. Bu kararın özetini çıkarın ve kesinlikle aşağıdaki formatta sunun:
 
-                Dava Konusu: [Davanın ana konusu ve taraflar arasındaki uyuşmazlığın özü]
+                Dava Konusu: [Davanın ana konusu ve taraflar arasındaki uyuşmazlığın öz]
                 Hukuki Dayanak: [Kararın dayandığı kanun maddeleri, ilgili hukuki düzenlemeler ve içtihatlar]
                 Mahkeme Kararı: [Mahkemenin vardığı nihai sonuç ve hüküm]
                 Kararın Gerekçesi: [Mahkemenin gerekçesi ve karara varırken kullandığı hukuki ve somut değerlendirmeler]
@@ -42,8 +39,6 @@ async def summarize_text(text):
                 {text[:1000]}  # Limit the text to 1000 characters for logging
 
                 Özet:"""
-        
-        logger.info(f"Generated prompt: {prompt[:500]}...")  # Log the first 500 characters of the prompt
         
         payload = {
             "model": os.getenv('MODEL', 'togethercomputer/llama-3-70b-chat'),
@@ -62,19 +57,16 @@ async def summarize_text(text):
             "Content-Type": "application/json"
         }
         
-        logger.info("Sending request to AI API")
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
             async with session.post(API_URL, json=payload, headers=headers) as response:
-                logger.info(f"Received response with status: {response.status}")
                 response_data = await response.json()
-                logger.info(f"Raw API response: {response_data}")  # Log the entire response
                 
                 if 'output' in response_data and 'choices' in response_data['output']:
                     summary = response_data['output']['choices'][0]['text']
-                    logger.info(f"Generated summary: {summary[:500]}...")  # Log the first 500 characters of the summary
+                    logger.info("Summary created successfully.")
                     return summary.strip()
                 else:
-                    logger.error(f"Unexpected response format: {response_data}")
+                    logger.warning("Summary creation failed: No output in response.")
                     return "Özet oluşturulamadı."
         
     except Exception as e:
@@ -90,7 +82,7 @@ def clean_summary(summary):
                 sections = value.split('\n')
                 cleaned_sections = []
                 for section in sections:
-                    if section not in cleaned_sections[-3:]:
+                    if section.strip() and (not cleaned_sections or section != cleaned_sections[-1]):
                         cleaned_sections.append(section)
                 cleaned_summary[key] = '\n'.join(cleaned_sections)
             else:
@@ -100,15 +92,13 @@ def clean_summary(summary):
         sections = summary.split('\n')
         cleaned_sections = []
         for section in sections:
-            if section not in cleaned_sections[-3:]:
+            if section.strip() and (not cleaned_sections or section != cleaned_sections[-1]):
                 cleaned_sections.append(section)
         return '\n'.join(cleaned_sections)
     else:
         return summary  # Return as-is if it's neither string nor dict
 
 async def parse_summary(summary):
-    logger.info(f"Parsing summary: {summary}")
-    
     sections = ["Dava Konusu:", "Hukuki Dayanak:", "Mahkeme Kararı:", "Kararın Gerekçesi:"]
     parsed = {section.strip(':'): "Bilgi bulunamadı." for section in sections}
     
@@ -154,12 +144,25 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
         async for key in get_s3_files(bucket_name, prefix, max_files):
             if file_count >= max_files:
                 break
+            
+            # Check if summary already exists
+            if await check_summary_exists(bucket_name, key):
+                logger.info(f"Summary already exists for file: {key}")
+                continue
+            
             content = await get_file_content(bucket_name, key)
             summary = await summarize_text(content)
+            if summary:
+                logger.info(f"Summary created for file: {key}")
+            else:
+                logger.warning(f"Failed to create summary for file: {key}")
             parsed_summary = await parse_summary(summary)
+            
+            # Upload the summary to S3
+            await upload_summary_to_s3(bucket_name, key, parsed_summary)
+            
             yield {key: parsed_summary}
             file_count += 1
-        logger.info("Summarization completed successfully")
     except Exception as e:
         logger.error(f"Error in run_summarize_files_from_s3: {str(e)}")
         logger.error(traceback.format_exc())
