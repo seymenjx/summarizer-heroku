@@ -18,6 +18,7 @@ redis_url = 'redis://localhost:6379'
 redis_client = redis.Redis.from_url(redis_url)
 queue_name = 'default'
 results_key = 'summarization_results'
+benchmark_key = 'summarization_benchmark'
 
 @app.route('/summarize', methods=['POST'])
 def summarize():
@@ -65,6 +66,42 @@ def get_summaries():
     except Exception as e:
         logger.error(f"Error in get_summaries: {str(e)}")
         return jsonify({"error": "Failed to fetch summaries"}), 500
+
+
+
+@app.route('/get_benchmark', methods=['GET'])
+def get_benchmark():
+    try:
+        # Fetch all benchmark data from Redis
+        benchmark_data = redis_client.hgetall(benchmark_key)
+        
+        if not benchmark_data:
+            return jsonify({"message": "No benchmark data available"}), 404
+
+        # Convert byte strings to regular strings and floats
+        results = {
+            job_id.decode('utf-8'): float(processing_time)
+            for job_id, processing_time in benchmark_data.items()
+        }
+
+        # Calculate some statistics
+        times = list(results.values())
+        stats = {
+            "total_jobs": len(times),
+            "average_time": sum(times) / len(times),
+            "min_time": min(times),
+            "max_time": max(times)
+        }
+
+        return jsonify({
+            "benchmark_results": results,
+            "statistics": stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error in get_benchmark: {str(e)}")
+        return jsonify({"error": "Failed to fetch benchmark results"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

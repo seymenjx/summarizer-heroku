@@ -27,18 +27,17 @@ async def summarize_text(text):
 
     try:
         prompt = f"""Aşağıdaki metin bir Yargıtay kararıdır. Bu kararın özetini çıkarın ve kesinlikle aşağıdaki formatta sunun:
+                    Karar metni:
+                    {text} 
 
-                Dava Konusu: [Davanın ana konusu ve taraflar arasındaki uyuşmazlığın öz]
-                Hukuki Dayanak: [Kararın dayandığı kanun maddeleri, ilgili hukuki düzenlemeler ve içtihatlar]
-                Mahkeme Kararı: [Mahkemenin vardığı nihai sonuç ve hüküm]
-                Kararın Gerekçesi: [Mahkemenin gerekçesi ve karara varırken kullandığı hukuki ve somut değerlendirmeler]
+                'Dava Konusu':' Davanın ana konusu ve taraflar arasındaki uyuşmazlık net bir şekilde ifade edilmelidir. Örneğin, "Bir iş sözleşmesinin feshi ile ilgili tazminat talebi" veya "Miras paylaşımı sırasında ortaya çıkan mal varlığı uyuşmazlığı" gibi. Bu bölümde davanın hangi hukuki alanla ilgili olduğu ve ne tür bir talebin incelendiği açıklanmalıdır.'
+                'Hukuki Dayanak': 'Mahkemenin kararını dayandırdığı kanun maddeleri, ilgili hukuki düzenlemeler ve daha önceki içtihatlar bu bölümde belirtilmelidir. Örneğin, "6098 sayılı Türk Borçlar Kanunu'nun 123. maddesi" veya "Yargıtay 9. Hukuk Dairesi'nin emsal niteliğindeki kararı" gibi detaylar yer almalıdır.'
+                'Mahkeme Kararı': 'Mahkemenin vardığı nihai sonuç ve verdiği hüküm burada belirtilir. Örneğin, "Davacının tazminat talebi kısmen kabul edilmiştir" veya "Mahkeme, davalının itirazını reddetmiştir" gibi karar özetlenir.'
+                'Kararın Gerekçesi': 'Mahkemenin verdiği kararı hangi somut ve hukuki gerekçelerle desteklediği burada açıklanır. Örneğin, "Mahkeme, iş sözleşmesinin haklı bir nedenle feshedilmediği kanaatine varmıştır" gibi gerekçelere yer verilmelidir.'
+                Eğer metinde bir bölüm için yeterli bilgi yoksa, "Bilgi bulunamadı" şeklinde not düşebilirsiniz.
+                Lütfen her bölümü ayrı ayrı doldurun ve bölüm başlıklarını aynen kullanın. Önemli hukuki terimleri ve kanun numaralarını mutlaka belirtin. Özet kısa ve öz olmalı ve Turkce olarak yazilmali, ancak kritik bilgileri içermelidir. Eğer herhangi bir bölüm için bilgi bulunamazsa, o bölümü 'Bilgi bulunamadı' olarak işaretleyin. Lütfen cevabınızı sadece bu dört bölümle sınırlı tutun ve ekstra bilgi eklemeyin. 
 
-                Lütfen her bölümü ayrı ayrı doldurun ve bölüm başlıklarını aynen kullanın. Önemli hukuki terimleri ve kanun numaralarını mutlaka belirtin. Özet kısa ve öz olmalı, ancak kritik bilgileri içermelidir. Eğer herhangi bir bölüm için bilgi bulunamazsa, o bölümü 'Bilgi bulunamadı' olarak işaretleyin. Lütfen cevabınızı sadece bu dört bölümle sınırlı tutun ve ekstra bilgi eklemeyin. Eğer metinde yeterli bilgi yoksa, 'Bilgi bulunamadı' yazmak yerine mevcut bilgileri kullanarak en iyi tahmini yapın.
-
-                Karar metni:
-                {text[:1000]}  # Limit the text to 1000 characters for logging
-
-                Özet:"""
+                Cevap:"""
         
         payload = {
             "model": os.getenv('MODEL', 'togethercomputer/llama-3-70b-chat'),
@@ -131,10 +130,6 @@ async def parse_summary(summary):
 
     # Ensure that the Tam Ozet Metni is properly filled
     parsed["Tam Ozet Metni"] = "\n".join([f"{section}: {content}" for section, content in parsed.items() if section != "Tam Ozet Metni" and section != "Output"])
-    
-    # If the Output is empty, fill it with the Tam Ozet Metni
-    if not parsed['Output']:
-        parsed['Output'] = parsed["Tam Ozet Metni"]
     
     return parsed
 

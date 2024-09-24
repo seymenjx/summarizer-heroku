@@ -11,9 +11,11 @@ logger = logging.getLogger(__name__)
 redis_url = 'redis://localhost:6379'  # Make sure this matches the Flask app's Redis URL
 queue_name = 'default'
 results_key = 'summarization_results'
+benchmark_key = 'summarization_benchmark'
 
 async def process_job(job_data):
     try:
+        start_time = asyncio.get_event_loop().time()
         job_id = job_data['id']
         bucket_name = job_data['bucket_name']
         prefix = job_data.get('prefix', '')
@@ -27,8 +29,14 @@ async def process_job(job_data):
             current_results.update(partial_result)
             redis_client.set(f"{results_key}:{job_id}", json.dumps(current_results))
         
-        logger.info(f"Job completed successfully. All summaries stored in Redis under key: {results_key}:{job_id}")
-        return "Job completed"
+        end_time = asyncio.get_event_loop().time()
+        processing_time = end_time - start_time
+        logger.info(f"Job completed successfully in {processing_time:.2f} seconds. All summaries stored in Redis under key: {results_key}:{job_id}")
+        
+        # Store processing time in benchmark_key
+        redis_client.hset(benchmark_key, job_id, processing_time)
+        
+        return f"Job completed in {processing_time:.2f} seconds"
     except Exception as e:
         logger.error(f"Error processing job: {str(e)}", exc_info=True)
         return f"Error: {str(e)}"
