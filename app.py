@@ -8,13 +8,16 @@ from redis import Redis
 from rq import Queue, Worker
 from summarizer.core import run_summarize_files_from_s3  # Updated import
 import asyncio
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-redis_url = 'redis://localhost:6379'
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 redis_client = redis.Redis.from_url(redis_url)
 queue_name = 'default'
 results_key = 'summarization_results'

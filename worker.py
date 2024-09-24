@@ -3,12 +3,16 @@ import redis
 import json
 import logging
 import sys
+import os
 from summarizer.core import run_summarize_files_from_s3  # Updated import
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-redis_url = 'redis://localhost:6379'  # Make sure this matches the Flask app's Redis URL
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')  # Make sure this matches the Flask app's Redis URL
 queue_name = 'default'
 results_key = 'summarization_results'
 benchmark_key = 'summarization_benchmark'
