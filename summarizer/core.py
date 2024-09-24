@@ -40,7 +40,7 @@ async def summarize_text(text):
                 Cevap:"""
         
         payload = {
-            "model": os.getenv('MODEL', 'togethercomputer/llama-3-70b-chat'),
+            "model": os.getenv('MODEL', 'togethercomputer/llama-3.1-70b-chat'),
             "prompt": prompt,
             "max_tokens": 1500,
             "temperature": 0.7,
