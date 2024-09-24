@@ -36,7 +36,7 @@ async def summarize_text(text):
                 'Kararın Gerekçesi': 'Mahkemenin verdiği kararı hangi somut ve hukuki gerekçelerle desteklediği burada açıklanır. Örneğin, "Mahkeme, iş sözleşmesinin haklı bir nedenle feshedilmediği kanaatine varmıştır" gibi gerekçelere yer verilmelidir.'
                 Eğer metinde bir bölüm için yeterli bilgi yoksa, "Bilgi bulunamadı" şeklinde not düşebilirsiniz.
                 Lütfen her bölümü ayrı ayrı doldurun ve bölüm başlıklarını aynen kullanın. Önemli hukuki terimleri ve kanun numaralarını mutlaka belirtin. Özet kısa ve öz olmalı ve Turkce olarak yazilmali, ancak kritik bilgileri içermelidir. Eğer herhangi bir bölüm için bilgi bulunamazsa, o bölümü 'Bilgi bulunamadı' olarak işaretleyin. Lütfen cevabınızı sadece bu dört bölümle sınırlı tutun ve ekstra bilgi eklemeyin. 
-
+                * kullanmayın. Cevaplari tek satirda yazin.
                 Cevap:"""
         
         payload = {
