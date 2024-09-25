@@ -31,7 +31,7 @@ async def process_job(job_data):
         async for partial_result in run_summarize_files_from_s3(bucket_name, prefix, max_files):
             current_results = json.loads(redis_client.get(f"{results_key}:{job_id}") or '{}')
             current_results.update(partial_result)
-            redis_client.set(f"{results_key}:{job_id}", json.dumps(current_results))
+            redis_client.set(f"{results_key}:{job_id}", json.dumps(current_results), ex=3600)  # Set expiration time
         
         end_time = asyncio.get_event_loop().time()
         processing_time = end_time - start_time
