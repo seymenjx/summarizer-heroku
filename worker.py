@@ -51,6 +51,8 @@ async def main():
         _, job_data = await asyncio.to_thread(redis_client.blpop, queue_name)
         job = json.loads(job_data)
         await process_job(job)
+        # Set expiration time for job data
+        redis_client.set(f"job:{job['id']}", json.dumps(job), ex=3600)  # 1 hour expiration
 
 if __name__ == '__main__':
     asyncio.run(main())

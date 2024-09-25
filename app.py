@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 redis_client = redis.Redis.from_url(redis_url)
+redis_client.config_set('maxmemory-policy', 'allkeys-lru')
 queue_name = 'default'
 results_key = 'summarization_results'
 benchmark_key = 'summarization_benchmark'
@@ -39,8 +40,9 @@ def summarize():
         'max_files': max_files
     }
 
-    # Push the job to Redis
+    # Push the job to Redis with expiration time
     redis_client.rpush(queue_name, json.dumps(job_data))
+    redis_client.set(f"job:{job_id}", json.dumps(job_data), ex=3600)  # 1 hour expiration
     logger.info(f"Job enqueued: {job_data}")
 
     return jsonify({'job_id': job_id}), 202
