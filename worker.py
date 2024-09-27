@@ -17,33 +17,25 @@ queue_name = 'default'
 results_key = 'summarization_results'
 benchmark_key = 'summarization_benchmark'
 
-async def process_job(job_data):
+async def process_job(job):
+    bucket_name = job['bucket_name']
+    prefix = job.get('prefix', '')
+    max_files = job.get('max_files', 100)
+    job_id = job['id']
+
+    logger.info(f"Processing job: bucket={bucket_name}, prefix={prefix}, max_files={max_files}")
+
     try:
-        start_time = asyncio.get_event_loop().time()
-        job_id = job_data['id']
-        bucket_name = job_data['bucket_name']
-        prefix = job_data.get('prefix', '')
-        max_files = job_data.get('max_files', 100)
-        logger.info(f"Processing job: bucket={bucket_name}, prefix={prefix}, max_files={max_files}")
+        result = await run_summarize_files_from_s3(bucket_name, prefix, max_files)
         
+        # Store the result in Redis
         redis_client = redis.Redis.from_url(redis_url)
-        
-        async for partial_result in run_summarize_files_from_s3(bucket_name, prefix, max_files):
-            current_results = json.loads(redis_client.get(f"{results_key}:{job_id}") or '{}')
-            current_results.update(partial_result)
-            redis_client.set(f"{results_key}:{job_id}", json.dumps(current_results), ex=3600)  # Set expiration time
-        
-        end_time = asyncio.get_event_loop().time()
-        processing_time = end_time - start_time
-        logger.info(f"Job completed successfully in {processing_time:.2f} seconds. All summaries stored in Redis under key: {results_key}:{job_id}")
-        
-        # Store processing time in benchmark_key
-        redis_client.hset(benchmark_key, job_id, processing_time)
-        
-        return f"Job completed in {processing_time:.2f} seconds"
+        redis_client.set(f"{results_key}:{job_id}", json.dumps(result), ex=3600)  # 1 hour expiration
+        logger.info(f"Job completed: {job_id}")
     except Exception as e:
-        logger.error(f"Error processing job: {str(e)}", exc_info=True)
-        return f"Error: {str(e)}"
+        logger.error(f"Error processing job: {str(e)}")
+        redis_client = redis.Redis.from_url(redis_url)
+        redis_client.set(f"{results_key}:{job_id}", json.dumps({"error": str(e)}), ex=3600)
 
 async def main():
     redis_client = redis.Redis.from_url(redis_url)
