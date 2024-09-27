@@ -19,33 +19,39 @@ logger = logging.getLogger(__name__)
 
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 redis_client = redis.Redis.from_url(redis_url)
-redis_client.config_set('maxmemory-policy', 'allkeys-lru')
 queue_name = 'default'
 results_key = 'summarization_results'
 benchmark_key = 'summarization_benchmark'
 
+# Remove the CONFIG SET command
+# redis_client.config_set('maxmemory-policy', 'allkeys-lru')
+
 @app.route('/summarize', methods=['POST'])
 def summarize():
-    data = request.json
-    logger.info(f"Received request body: {data}")  # Log the entire request body
-    bucket_name = data['bucket_name']
-    prefix = data.get('prefix', '')
-    max_files = data.get('max_files', 100)
+    try:
+        data = request.json
+        logger.info(f"Received request body: {data}")
+        bucket_name = data['bucket_name']
+        prefix = data.get('prefix', '')
+        max_files = data.get('max_files', 100)
 
-    job_id = str(uuid.uuid4())  # Generate a unique ID for the job
-    job_data = {
-        'id': job_id,
-        'bucket_name': bucket_name,
-        'prefix': prefix,
-        'max_files': max_files
-    }
+        job_id = str(uuid.uuid4())
+        job_data = {
+            'id': job_id,
+            'bucket_name': bucket_name,
+            'prefix': prefix,
+            'max_files': max_files
+        }
 
-    # Push the job to Redis with expiration time
-    redis_client.rpush(queue_name, json.dumps(job_data))
-    redis_client.set(f"job:{job_id}", json.dumps(job_data), ex=3600)  # 1 hour expiration
-    logger.info(f"Job enqueued: {job_data}")
+        # Set expiration time for job data (e.g., 1 hour)
+        redis_client.rpush(queue_name, json.dumps(job_data))
+        redis_client.set(f"job:{job_id}", json.dumps(job_data), ex=3600)
+        logger.info(f"Job enqueued: {job_data}")
 
-    return jsonify({'job_id': job_id}), 202
+        return jsonify({'job_id': job_id}), 202
+    except Exception as e:
+        logger.error(f"Error in summarize endpoint: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/get_summaries', methods=['GET'])
 def get_summaries():
@@ -108,5 +114,10 @@ def get_benchmark():
         return jsonify({"error": "Failed to fetch benchmark results"}), 500
 
 
+@app.errorhandler(500)
+def internal_server_error(error):
+    logger.error(f"Internal Server Error: {str(error)}")
+    return jsonify({'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True)
