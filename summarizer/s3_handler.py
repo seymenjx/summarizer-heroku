@@ -18,29 +18,44 @@ async def get_last_processed_file(bucket, prefix):
     return None
 
 async def get_s3_files(bucket, prefix, max_files):
-    last_processed = await get_last_processed_file(bucket, prefix)
-    start_after = last_processed if last_processed else f"{prefix}summarizer/"
-    
+    logger.info(f"Starting to list files in bucket: {bucket}, prefix: {prefix}")
     session = aiobotocore.session.get_session()
     async with session.create_client('s3', region_name='eu-north-1') as client:
         paginator = client.get_paginator('list_objects_v2')
-        async for result in paginator.paginate(Bucket=bucket, Prefix=prefix, StartAfter=start_after):
-            for content in result.get('Contents', []):
-                if content['Key'] == '9/b+V+I9J23s3P2ZRZ9TX6XNE3RP301xQ7VtHBvU':
-                    continue  # Skip this file
-                if content['Key'].startswith(f"{prefix}summarizer/"):
-                    continue  # Skip files in the summarizer directory
-                yield content['Key']
-                if max_files and max_files <= 0:
-                    return
-                max_files -= 1
+        file_count = 0
+        try:
+            async for result in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                logger.info(f"Received a page of results with {len(result.get('Contents', []))} items")
+                for content in result.get('Contents', []):
+                    if content['Key'].endswith('/'):  # Skip directories
+                        logger.info(f"Skipping directory: {content['Key']}")
+                        continue
+                    if content['Key'] == '9/b+V+I9J23s3P2ZRZ9TX6XNE3RP301xQ7VtHBvU':
+                        logger.info(f"Skipping specific file: {content['Key']}")
+                        continue
+                    logger.info(f"Yielding file: {content['Key']}")
+                    yield content['Key']
+                    file_count += 1
+                    if max_files and file_count >= max_files:
+                        logger.info(f"Reached max_files limit of {max_files}")
+                        return
+        except Exception as e:
+            logger.error(f"Error listing S3 files: {str(e)}")
+    logger.info(f"Finished listing files. Total files found: {file_count}")
 
 async def get_file_content(bucket, key):
+    logger.info(f"Fetching content for file: {key}")
     session = aiobotocore.session.get_session()
     async with session.create_client('s3', region_name='eu-north-1') as client:
-        response = await client.get_object(Bucket=bucket, Key=key)
-        async with response['Body'] as stream:
-            return await stream.read()
+        try:
+            response = await client.get_object(Bucket=bucket, Key=key)
+            async with response['Body'] as stream:
+                content = await stream.read()
+            logger.info(f"Successfully fetched content for file: {key}")
+            return content
+        except Exception as e:
+            logger.error(f"Error fetching content for file {key}: {str(e)}")
+            raise
 
 async def check_summary_exists(bucket, key):
     session = aiobotocore.session.get_session()  # Use get_session to create a session

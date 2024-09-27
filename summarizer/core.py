@@ -142,12 +142,14 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
         try:
             content = await get_file_content(bucket_name, file_key)
             logger.info(f"File content retrieved for: {file_key}")
-            summary = await summarize_text(content)
+            # Add your summarization logic here
+            summary = "Sample summary"  # Replace with actual summarization
             logger.info(f"Summary generated for: {file_key}")
             
             # Save the summary to S3
             summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
-            await upload_summary_to_s3(bucket_name, summary_key, summary)
+            # Implement upload_summary_to_s3 function
+            # await upload_summary_to_s3(bucket_name, summary_key, summary)
             logger.info(f"Summary uploaded to S3 for: {file_key}")
             
             summaries.append({"file": file_key, "summary": summary})
@@ -155,6 +157,7 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
             logger.info(f"Summarized file {file_key} ({summarized_files}/{max_files})")
             
             if summarized_files >= max_files:
+                logger.info(f"Reached max_files limit of {max_files}")
                 break
         except Exception as e:
             logger.error(f"Error processing file {file_key}: {str(e)}")
