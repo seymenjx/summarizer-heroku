@@ -136,14 +136,19 @@ async def parse_summary(summary):
 async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
     summarized_files = 0
     summaries = []
+    logger.info(f"Starting to process files from bucket: {bucket_name}, prefix: {prefix}")
     async for file_key in get_s3_files(bucket_name, prefix, max_files):
+        logger.info(f"Processing file: {file_key}")
         try:
             content = await get_file_content(bucket_name, file_key)
+            logger.info(f"File content retrieved for: {file_key}")
             summary = await summarize_text(content)
+            logger.info(f"Summary generated for: {file_key}")
             
             # Save the summary to S3
             summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
             await upload_summary_to_s3(bucket_name, summary_key, summary)
+            logger.info(f"Summary uploaded to S3 for: {file_key}")
             
             summaries.append({"file": file_key, "summary": summary})
             summarized_files += 1
@@ -155,4 +160,5 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
             logger.error(f"Error processing file {file_key}: {str(e)}")
             continue
 
+    logger.info(f"Completed processing. Total files summarized: {summarized_files}")
     return {"summarized_files": summarized_files, "summaries": summaries}
