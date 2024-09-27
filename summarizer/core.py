@@ -134,31 +134,23 @@ async def parse_summary(summary):
     return parsed
 
 async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
-    try:
-        file_count = 0
-        async for key in get_s3_files(bucket_name, prefix, max_files):
-            if file_count >= max_files:
-                break
-            
-            # Check if summary already exists
-            if await check_summary_exists(bucket_name, key):
-                logger.info(f"Summary already exists for file: {key}")
-                continue
-            
-            content = await get_file_content(bucket_name, key)
+    summarized_files = 0
+    async for file_key in get_s3_files(bucket_name, prefix, max_files):
+        try:
+            content = await get_file_content(bucket_name, file_key)
             summary = await summarize_text(content)
-            if summary:
-                logger.info(f"Summary created for file: {key}")
-            else:
-                logger.warning(f"Failed to create summary for file: {key}")
-            parsed_summary = await parse_summary(summary)
             
-            # Upload the summary to S3
-            await upload_summary_to_s3(bucket_name, key, parsed_summary)
+            # Save the summary to S3
+            summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
+            await upload_summary_to_s3(bucket_name, summary_key, summary)
             
-            yield {key: parsed_summary}
-            file_count += 1
-    except Exception as e:
-        logger.error(f"Error in run_summarize_files_from_s3: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise
+            summarized_files += 1
+            logger.info(f"Summarized file {file_key} ({summarized_files}/{max_files})")
+            
+            if summarized_files >= max_files:
+                break
+        except Exception as e:
+            logger.error(f"Error processing file {file_key}: {str(e)}")
+            continue
+
+    return f"Summarized {summarized_files} files"

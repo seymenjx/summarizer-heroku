@@ -2,25 +2,42 @@ import aiobotocore.session
 import asyncio
 import logging
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
-async def get_s3_files(bucket, prefix, max_files):
-    session = aiobotocore.session.get_session()  # Use get_session to create a session
-    async with session.create_client('s3', region_name='eu-north-1') as client:  # Set the correct region here
+async def get_last_processed_file(bucket, prefix):
+    session = aiobotocore.session.get_session()
+    async with session.create_client('s3', region_name='eu-north-1') as client:
         paginator = client.get_paginator('list_objects_v2')
-        async for result in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        last_key = None
+        async for result in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}summarizer/"):
+            for content in sorted(result.get('Contents', []), key=lambda x: x['LastModified'], reverse=True):
+                last_key = content['Key']
+                return last_key
+    return None
+
+async def get_s3_files(bucket, prefix, max_files):
+    last_processed = await get_last_processed_file(bucket, prefix)
+    start_after = last_processed if last_processed else f"{prefix}summarizer/"
+    
+    session = aiobotocore.session.get_session()
+    async with session.create_client('s3', region_name='eu-north-1') as client:
+        paginator = client.get_paginator('list_objects_v2')
+        async for result in paginator.paginate(Bucket=bucket, Prefix=prefix, StartAfter=start_after):
             for content in result.get('Contents', []):
                 if content['Key'] == '9/b+V+I9J23s3P2ZRZ9TX6XNE3RP301xQ7VtHBvU':
                     continue  # Skip this file
+                if content['Key'].startswith(f"{prefix}summarizer/"):
+                    continue  # Skip files in the summarizer directory
                 yield content['Key']
                 if max_files and max_files <= 0:
                     return
                 max_files -= 1
 
 async def get_file_content(bucket, key):
-    session = aiobotocore.session.get_session()  # Use get_session to create a session
-    async with session.create_client('s3', region_name='eu-north-1') as client:  # Set the correct region here
+    session = aiobotocore.session.get_session()
+    async with session.create_client('s3', region_name='eu-north-1') as client:
         response = await client.get_object(Bucket=bucket, Key=key)
         async with response['Body'] as stream:
             return await stream.read()
