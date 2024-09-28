@@ -140,21 +140,34 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
     async for file_key in get_s3_files(bucket_name, prefix, max_files):
         logger.info(f"Processing file: {file_key}")
         try:
+            summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
+            existing_summary = await get_existing_summary(bucket_name, summary_key)
+            
+            if existing_summary and existing_summary.strip() != "Sample summary":
+                logger.info(f"Valid summary already exists for {file_key}. Skipping.")
+                summaries.append({"file": file_key, "summary": existing_summary})
+                summarized_files += 1
+                continue
+
             content = await get_file_content(bucket_name, file_key)
             logger.info(f"File content retrieved for: {file_key}")
-            # Add your summarization logic here
-            summary = "Sample summary"  # Replace with actual summarization
-            logger.info(f"Summary generated for: {file_key}")
             
-            # Save the summary to S3
-            summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
-            # Implement upload_summary_to_s3 function
-            # await upload_summary_to_s3(bucket_name, summary_key, summary)
-            logger.info(f"Summary uploaded to S3 for: {file_key}")
+            text_content = content.decode('utf-8')
+            summary = await summarize_text(text_content)
             
-            summaries.append({"file": file_key, "summary": summary})
-            summarized_files += 1
-            logger.info(f"Summarized file {file_key} ({summarized_files}/{max_files})")
+            if summary:
+                cleaned_summary = clean_summary(summary)
+                parsed_summary = await parse_summary(cleaned_summary)
+                logger.info(f"Summary generated for: {file_key}")
+                
+                await upload_summary_to_s3(bucket_name, summary_key, json.dumps(parsed_summary))
+                logger.info(f"Summary uploaded to S3 for: {file_key}")
+                
+                summaries.append({"file": file_key, "summary": parsed_summary})
+                summarized_files += 1
+                logger.info(f"Summarized file {file_key} ({summarized_files}/{max_files})")
+            else:
+                logger.warning(f"Failed to generate summary for: {file_key}")
             
             if summarized_files >= max_files:
                 logger.info(f"Reached max_files limit of {max_files}")
@@ -165,3 +178,10 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
 
     logger.info(f"Completed processing. Total files summarized: {summarized_files}")
     return {"summarized_files": summarized_files, "summaries": summaries}
+
+async def get_existing_summary(bucket_name, summary_key):
+    try:
+        content = await get_file_content(bucket_name, summary_key)
+        return content.decode('utf-8')
+    except Exception:
+        return None

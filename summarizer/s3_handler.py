@@ -53,6 +53,9 @@ async def get_file_content(bucket, key):
                 content = await stream.read()
             logger.info(f"Successfully fetched content for file: {key}")
             return content
+        except client.exceptions.NoSuchKey:
+            logger.info(f"File not found: {key}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching content for file {key}: {str(e)}")
             raise
