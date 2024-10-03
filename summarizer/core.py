@@ -137,7 +137,6 @@ async def parse_summary(summary):
 
 async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
     summarized_files = 0
-    summaries = []
     logger.info(f"Starting to process files from bucket: {bucket_name}, prefix: {prefix}")
     async for file_key in get_s3_files(bucket_name, prefix, max_files):
         logger.info(f"Processing file: {file_key}")
@@ -147,7 +146,6 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
             
             if existing_summary and existing_summary.strip() != "Sample summary":
                 logger.info(f"Valid summary already exists for {file_key}. Skipping.")
-                summaries.append({"file": file_key, "summary": existing_summary})
                 summarized_files += 1
                 continue
 
@@ -165,7 +163,6 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
                 await upload_summary_to_s3(bucket_name, summary_key, json.dumps(parsed_summary, ensure_ascii=False))
                 logger.info(f"Summary uploaded to S3 for: {file_key}")
                 
-                summaries.append({"file": file_key, "summary": parsed_summary})
                 summarized_files += 1
                 logger.info(f"Summarized file {file_key} ({summarized_files}/{max_files})")
             else:
@@ -179,7 +176,7 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
             continue
 
     logger.info(f"Completed processing. Total files summarized: {summarized_files}")
-    return {"summarized_files": summarized_files, "summaries": summaries}
+    return {"summarized_files": summarized_files}
 
 async def get_existing_summary(bucket_name, summary_key):
     try:
