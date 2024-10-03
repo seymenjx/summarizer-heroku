@@ -32,9 +32,7 @@ async def process_job(job):
     logger.info(f"Processing job: bucket={bucket_name}, prefix={prefix}, max_files={max_files}")
 
     try:
-        # Await the coroutine to get the async iterable
-        file_keys = await run_summarize_files_from_s3(bucket_name, prefix, max_files)
-        async for file_key in file_keys:  # Now we can use async for
+        async for file_key in run_summarize_files_from_s3(bucket_name, prefix, max_files):
             # Process each file and update the processed count
             processed_files += 1
             # Update job status in Redis

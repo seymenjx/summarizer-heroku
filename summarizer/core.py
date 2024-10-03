@@ -142,7 +142,7 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
     async for file_key in get_s3_files(bucket_name, prefix, max_files):
         logger.info(f"Processing file: {file_key}")
         try:
-            summary_key = f"{prefix}summarizer/{os.path.basename(file_key)}_summary.txt"
+            summary_key = f"{prefix}{os.path.basename(file_key)}"
             existing_summary = await get_existing_summary(bucket_name, summary_key)
             
             if existing_summary and existing_summary.strip() != "Sample summary":
@@ -162,7 +162,7 @@ async def run_summarize_files_from_s3(bucket_name, prefix, max_files):
                 parsed_summary = await parse_summary(cleaned_summary)
                 logger.info(f"Summary generated for: {file_key}")
                 
-                await upload_summary_to_s3(bucket_name, summary_key, json.dumps(parsed_summary))
+                await upload_summary_to_s3(bucket_name, summary_key, json.dumps(parsed_summary, ensure_ascii=False))
                 logger.info(f"Summary uploaded to S3 for: {file_key}")
                 
                 summaries.append({"file": file_key, "summary": parsed_summary})
